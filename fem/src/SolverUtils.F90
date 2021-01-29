@@ -17827,8 +17827,8 @@ CONTAINS
         INTEGER, POINTER :: Indexes(:)
         INTEGER, ALLOCATABLE :: NodeHits(:), InterfacePerm(:)
         INTEGER, ALLOCATABLE :: EdgePerm(:),EdgeShell(:),EdgeSolidCount(:),EdgeSolidTable(:,:)
-        INTEGER :: MaxEdgeSolidCon, NoFound, NoFound2
-        INTEGER :: InterfaceN, hits, MaxCount, TotCount, EdgeCount, Phase
+        INTEGER :: MaxEdgeSolidCount, NoFound, NoFound2
+        INTEGER :: InterfaceN, hits, TotCount, EdgeCount, Phase
         INTEGER :: p,lf,ls,ii,jj,n,m,t,l,elem
         INTEGER :: NormalDir
         REAL(KIND=dp), POINTER :: Director(:)
@@ -17836,7 +17836,6 @@ CONTAINS
         REAL(KIND=dp), ALLOCATABLE :: A_f0(:), rhs0(:), Mass0(:)
         REAL(KIND=dp) :: u,v,w,weight,detJ,val
         REAL(KIND=dp) :: x, y, z 
-
         TYPE(Element_t), POINTER :: Element, ShellElement, Edge
         TYPE(Nodes_t) :: Nodes
         LOGICAL :: Stat
@@ -17857,7 +17856,8 @@ CONTAINS
           END IF
         END IF
 
-        ALLOCATE( NodeHits( Mesh % NumberOfNodes ), InterfacePerm( Mesh % NumberOfNodes ) )
+        n = Mesh % NumberOfNodes
+        ALLOCATE( NodeHits( n ), InterfacePerm( n ) )
         NodeHits = 0
         InterfacePerm = 0
 
@@ -17961,28 +17961,11 @@ CONTAINS
             ! Ok, we have an edge
             k = EdgePerm(j)
             
-            !PRINT *,'edge:',t,j,k,InterfacePerm(Edge % NodeIndexes(1:2))
-
             IF( EdgeShell(k) == 0 ) THEN
               EdgeShell(k) = t
               NoFound = NoFound + 1
-
-              NodeHits(Edge % NodeIndexes) = NodeHits(Edge % NodeIndexes) + 1
-
             ELSE IF( EdgeShell(k) /= t ) THEN
-              !PRINT *,'More than one shell element for one edge!',j,t,EdgeShell(k)
               NoFound2 = NoFound2 + 1
-
-              x = SUM( Mesh % Nodes % x(Edge % NodeIndexes) ) / 2
-              y = SUM( Mesh % Nodes % y(Edge % NodeIndexes) ) / 2 
-              z = SUM( Mesh % Nodes % z(Edge % NodeIndexes) ) / 2 
-
-              !PRINT *,'shellind1:',Indexes, Element % BodyId
-              !PRINT *,'edgecoord',x,',',y,',',z
-              !PRINT *,'shellind0:',Mesh % Elements(EdgeShell(k)) % NodeIndexes, &
-              !    Mesh % Elements(EdgeShell(k)) % BodyId
-              !PRINT *,'edgeind:',Edge % NodeIndexes
-
             END IF
           END DO
 
@@ -18034,18 +18017,19 @@ CONTAINS
               EdgeSolidCount(k) = EdgeSolidCount(k) + 1
               
               IF( Phase == 1 ) THEN
+                NodeHits(Edge % NodeIndexes) = NodeHits(Edge % NodeIndexes) + 1
                 EdgeSolidTable(k,EdgeSolidCount(k)) = t
               END IF                                           
             END DO
           END DO
 
           IF( Phase == 0 ) THEN
-            MaxEdgeSolidCon = MAXVAL( EdgeSolidCount )
+            MaxEdgeSolidCount = MAXVAL( EdgeSolidCount )
             CALL Info(Caller,'Maximum number of edge solid owners: '&
-                //TRIM(I2S(MaxEdgeSolidCon)),Level=10)
+                //TRIM(I2S(MaxEdgeSolidCount)),Level=10)
             CALL Info(Caller,'Total number of edge solid owners: '&
                 //TRIM(I2S(SUM(EdgeSolidCount))),Level=10)
-            ALLOCATE( EdgeSolidTable(EdgeCount,MaxEdgeSolidCon) )
+            ALLOCATE( EdgeSolidTable(EdgeCount,MaxEdgeSolidCount) )
             EdgeSolidTable = 0
           END IF
         END DO
@@ -18061,7 +18045,7 @@ CONTAINS
           Indexes => Edge % NodeIndexes          
           
           ! For edge by construction we have two nodes, but let's be generic
-          n = Element % Type % NumberOfNodes
+          n = Edge % Type % NumberOfNodes
           x = SUM( Mesh % Nodes % x(Indexes) ) / n
           y = SUM( Mesh % Nodes % y(Indexes) ) / n 
           z = SUM( Mesh % Nodes % z(Indexes) ) / n 
@@ -18097,7 +18081,7 @@ CONTAINS
           ! Then go through the each solid element associated with the interface and
           ! create matrix entries defining the interaction conditions for the
           ! directional derivatives and corresponding forces. 
-          DO elem = 1, MaxEdgeSolidCon
+          DO elem = 1, MaxEdgeSolidCount
             k = EdgeSolidTable(EdgePerm(t),elem) 
             IF( k == 0 ) CYCLE
 
@@ -18123,7 +18107,6 @@ CONTAINS
               IF( NodeHits(i) == 0 ) CALL Fatal(Caller,'NodeHits should not be zero!')
                           
               Weight = 1.0_dp / NodeHits(i) 
-
               
               !PRINT *,'Weight:',elem,Element % ElementIndex,ii,i,jf,Weight
 
@@ -18201,6 +18184,9 @@ CONTAINS
                     ks = sdofs*(js-1)+lf-3
                     DO ls = 1, dim
                       val = Director(ls) * dBasisdx(p,ls)
+
+                      !PRINT *,'elem:',Element % ElementIndex, ShellElement % ElementIndex, &
+                      !    ls,js,ks,kf,weight,val,Director(ls)
 
                       CALL AddToMatrixElement(A_fs,kf,ks,weight*val)
 
